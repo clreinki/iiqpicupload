@@ -5,6 +5,7 @@ import time
 import logzero
 from logzero import logger
 import requests
+import urllib3
 
 #### MODIFY BEFORE RUNNING ####
 SITE_ID = "<your site id>"
@@ -67,21 +68,47 @@ def main():
 		allfiles.append(str(num))
 
 	for num in allfiles:
-		userid = userlookup(num)
-		if userid == "fail":
-			logger.error(f"Looking up user {num} failed")
-			continue
-		if userid == "duplicate":
-			logger.error(f"Duplicates of user {num} found")
-			continue
-		api = uploadpic(num, userid)
-		if api == 200:
-			logger.info(f"Uploaded {num} successfully")
-			success = success + 1
+
+		MAX_RETRIES = 5
+		retries = 0
+
+		while retries < MAX_RETRIES:
+			
+			try:
+				userid = userlookup(num)
+				if userid == "fail":
+					logger.error(f"Looking up user {num} failed")
+					break
+				if userid == "duplicate":
+					logger.error(f"Duplicates of user {num} found")
+					break
+				api = uploadpic(num, userid)
+				if api == 200:
+					logger.info(f"Uploaded {num} successfully")
+					success = success + 1
+				else:
+					logger.error(f"Failed to upload {num}")
+					fail = fail + 1
+				#time.sleep(1)
+			except urllib3.exceptions.SSLError as e:
+				logger.error(f"SSL Error on {num}, retrying: {e}")
+				retries += 1
+				time.sleep(5)
+				continue
+			except requests.exceptions.ConnectionError as e:
+				logger.error(f"Connection Error on {num}, retrying: {e}")
+				retries += 1
+				time.sleep(5)
+				continue
+			except Exception as e:
+				logger.error(f"Unknown error on {num}, retrying: {e}")
+				retries += 1
+				time.sleep(5)
+				continue
+			break
 		else:
-			logger.error(f"Failed to upload {num}")
-			fail = fail + 1
-		#time.sleep(1)
+			logger.error(f"Max retries reached for {num}, moving on")
+
 	logger.warn(f"Uploaded {success} successfully, failed on {fail}")
 
 if __name__ == "__main__":
